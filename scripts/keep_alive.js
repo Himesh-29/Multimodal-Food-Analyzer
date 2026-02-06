@@ -75,7 +75,9 @@ async function run() {
                         await new Promise(r => setTimeout(r, 60000)); 
                         if (await checkTextInFrames("App is alive")) {
                             console.log('SUCCESS: App woke up!');
-                            return;
+                            // USER REQUEST: If the app was down, we WANT the workflow to fail so GitHub sends a notification email.
+                            // The app is physically UP now, but the "incident" happened.
+                            throw new Error('[NOTE: THIS IS NOT A BUG] App was hibernating and has been REBOOTED. Exiting with error to trigger GitHub Notification.');
                         }
                     }
                 }
