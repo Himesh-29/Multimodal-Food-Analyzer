@@ -6,79 +6,104 @@ const TIMEOUT = 60000; // 60 seconds
 async function run() {
     console.log(`[INFO] Launching browser to check: ${TARGET_URL}`);
     const browser = await puppeteer.launch({
-        headless: true, // "new" can be flaky on some systems, true is safer
+        headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
 
     try {
         const page = await browser.newPage();
         
-        // extend timeout
+        // Capture browser console logs
+        page.on('console', msg => console.log('[BROWSER CONSOLE]', msg.text()));
+        
         page.setDefaultNavigationTimeout(TIMEOUT);
         page.setDefaultTimeout(TIMEOUT);
 
         console.log('[INFO] Navigating to page...');
-        await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' }); // faster than networkidle
+        await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
 
-        // Check for "App is alive" text (Success case)
+        // Helper to check text across all frames
+        const checkTextInFrames = async (text) => {
+            for (const frame of page.frames()) {
+                try {
+                    const content = await frame.content();
+                    if (content.includes(text)) return true;
+                } catch (e) { /* ignore detached frames */ }
+            }
+            return false;
+        };
+
+        // 1. Wait for "App is alive" (Success)
         try {
-            console.log('[INFO] checking for success marker...');
-            
-            // Wait specifically for the "App is alive" text to appear in the body
-            // Streamlit loads JS first, then renders content, so we need to wait for the text
+            console.log('[INFO] Checking for success marker...');
             await page.waitForFunction(
-                () => document.body.innerText.includes("App is alive"),
-                { timeout: 60000 } // Wait up to 60 seconds
-            );
-            
-            console.log('SUCCESS: App is explicitly reporting alive!');
-            return;
+                async () => {
+                    // This function runs in browser context, but we need to check frames from Node context usually.
+                    // Puppeteer waitForFunction is tricky with frames. 
+                    // Simpler approach: poller loop in Node.
+                    return false; 
+                }, 
+                { timeout: 100 } // fast fail to enter custom poller
+            ).catch(() => {});
+
+            // Custom poller for frames
+            const startTime = Date.now();
+            while (Date.now() - startTime < TIMEOUT) {
+                if (await checkTextInFrames("App is alive")) {
+                    console.log('SUCCESS: App is explicitly reporting alive!');
+                    return;
+                }
+                await new Promise(r => setTimeout(r, 2000));
+            }
+            console.log('[DEBUG] Success marker not found within timeout.');
         } catch (e) {
-            console.log('[DEBUG] Success marker not found within timeout, checking for hibernation...');
+            console.log('[DEBUG] Error checking for success marker:', e);
         }
 
-        // Check for "Wake up" button (Hibernation case)
+        // 2. Check for "Wake up" button (Hibernation)
         try {
-            // Streamlit's "Yes, get this app back up!" button might be in an iframe or main DOM
-            // We search for buttons with specific text
-            const wakeUpButton = await page.evaluateHandle(() => {
-                const buttons = Array.from(document.querySelectorAll('button'));
-                return buttons.find(b => b.innerText.includes('Yes, get this app back up!') || b.innerText.includes('Wake app up'));
-            });
-
-            if (wakeUpButton && wakeUpButton.asElement()) {
-                console.log('[ALERT] FOUND WAKE UP BUTTON! Clicking it...');
-                await wakeUpButton.asElement().click();
-                
-                // Wait for wake up
-                console.log('[INFO] Waiting for app to wake up (this may take a while)...');
-                await page.waitForFunction(
-                    () => document.body.innerText.includes('App is alive') || document.body.innerText.includes('Recipe'), 
-                    { timeout: 120000 } // Give it 2 mins to boot
-                );
-                console.log('SUCCESS: App woke up and loaded!');
-                return;
+            console.log('[INFO] Checking for Wake Up button...');
+            // Check all frames for button
+            for (const frame of page.frames()) {
+                const wakeUpButton = await frame.$("button");
+                if (wakeUpButton) {
+                    const text = await frame.evaluate(el => el.innerText, wakeUpButton);
+                    if (text.includes("Yes, get this app back up") || text.includes("Wake app up")) {
+                        console.log('[ALERT] FOUND WAKE UP BUTTON! Clicking it...');
+                        await wakeUpButton.click();
+                        // Wait for reboot
+                        await new Promise(r => setTimeout(r, 60000)); 
+                        if (await checkTextInFrames("App is alive")) {
+                            console.log('SUCCESS: App woke up!');
+                            return;
+                        }
+                    }
+                }
             }
         } catch (e) {
-            console.log('[DEBUG] No wake up button found or click failed:', e.message);
+            console.log('[DEBUG] No wake up button found:', e.message);
         }
 
         // Final Verification
-        const content = await page.content();
-        const bodyText = await page.evaluate(() => document.body.innerText);
-        if (content.includes("App is alive") || content.includes("Recipe & Nutrition")) {
+        if (await checkTextInFrames("App is alive") || await checkTextInFrames("Recipe & Nutrition")) {
              console.log('SUCCESS: App seems to be running normal UI.');
         } else {
             console.error('FAILURE: Could NOT verify app state.');
-            console.error('--- BODY TEXT START ---');
-            console.error(bodyText.substring(0, 1000));
-            console.error('--- BODY TEXT END ---');
+            // Dump root HTML to see what IS rendered
+            try {
+                const rootHtml = await page.$eval('#root', el => el.innerHTML);
+                console.error('--- #ROOT HTML START ---');
+                console.error(rootHtml.substring(0, 1000));
+                console.error('--- #ROOT HTML END ---');
+            } catch(e) {
+                console.error('Could not dump #root:', e.message);
+            }
             throw new Error('App down or not responding with expected content');
         }
 
     } catch (error) {
         console.error('FATAL ERROR:', error);
-        process.exit(1); // Fail the action
+        process.exit(1);
     } finally {
         await browser.close();
     }
