@@ -3,6 +3,14 @@ import os
 from PIL import Image
 from datetime import datetime
 
+# Page config - MUST be the first Streamlit command
+st.set_page_config(
+    page_title="Recipe & Nutrition AI",
+    page_icon="🍽️", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # Handle UptimeRobot monitoring pings
 if 'heartbeat' in st.query_params:
     st.write(f"✅ App is alive at {datetime.now()}")
@@ -32,13 +40,7 @@ from src.services.web_search_service import search_recipe_online
 from src.services.rag_manager import rag_manager
 from src.services.cache_migration import check_migration_needed, migrate_cache_to_unified_format
 
-# Page config
-st.set_page_config(
-    page_title="Recipe & Nutrition AI",
-    page_icon="🍽️", 
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+
 
 def main():
     # Header using Streamlit components
