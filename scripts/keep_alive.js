@@ -6,8 +6,8 @@ const TIMEOUT = 60000; // 60 seconds
 async function run() {
     console.log(`[INFO] Launching browser to check: ${TARGET_URL}`);
     const browser = await puppeteer.launch({
-        headless: "new",
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        headless: true, // "new" can be flaky on some systems, true is safer
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
 
     try {
@@ -18,7 +18,7 @@ async function run() {
         page.setDefaultTimeout(TIMEOUT);
 
         console.log('[INFO] Navigating to page...');
-        await page.goto(TARGET_URL, { waitUntil: 'networkidle2' });
+        await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' }); // faster than networkidle
 
         // Check for "App is alive" text (Success case)
         try {
@@ -28,7 +28,7 @@ async function run() {
             // Streamlit loads JS first, then renders content, so we need to wait for the text
             await page.waitForFunction(
                 () => document.body.innerText.includes("App is alive"),
-                { timeout: 30000 } // Wait up to 30 seconds just for this text
+                { timeout: 60000 } // Wait up to 60 seconds
             );
             
             console.log('SUCCESS: App is explicitly reporting alive!');
@@ -65,11 +65,14 @@ async function run() {
 
         // Final Verification
         const content = await page.content();
+        const bodyText = await page.evaluate(() => document.body.innerText);
         if (content.includes("App is alive") || content.includes("Recipe & Nutrition")) {
              console.log('SUCCESS: App seems to be running normal UI.');
         } else {
-            console.error('FAILURE: Could NOT verify app state. Dumping content snippet:');
-            console.error(content.substring(0, 500));
+            console.error('FAILURE: Could NOT verify app state.');
+            console.error('--- BODY TEXT START ---');
+            console.error(bodyText.substring(0, 1000));
+            console.error('--- BODY TEXT END ---');
             throw new Error('App down or not responding with expected content');
         }
 
