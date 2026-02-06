@@ -23,16 +23,18 @@ async function run() {
         // Check for "App is alive" text (Success case)
         try {
             console.log('[INFO] checking for success marker...');
-            // Wait a bit for Streamlit to render
-            await new Promise(r => setTimeout(r, 2000));
             
-            const content = await page.content();
-            if (content.includes("✅ App is alive")) {
-                console.log('SUCCESS: App is explicitly reporting alive!');
-                return;
-            }
+            // Wait specifically for the "App is alive" text to appear in the body
+            // Streamlit loads JS first, then renders content, so we need to wait for the text
+            await page.waitForFunction(
+                () => document.body.innerText.includes("App is alive"),
+                { timeout: 30000 } // Wait up to 30 seconds just for this text
+            );
+            
+            console.log('SUCCESS: App is explicitly reporting alive!');
+            return;
         } catch (e) {
-            console.log('[DEBUG] exact success marker check failed, continuing generic checks');
+            console.log('[DEBUG] Success marker not found within timeout, checking for hibernation...');
         }
 
         // Check for "Wake up" button (Hibernation case)
