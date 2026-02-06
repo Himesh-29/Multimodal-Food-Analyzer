@@ -12,6 +12,12 @@ AI-powered food recognition and recipe generation system with retrieval-augmente
 
 ## Quick Start
 
+### Automatic App Monitoring (Keep-Alive)
+This repo includes a robust Keep-Alive system to prevent Streamlit Community Cloud hibernation:
+- **Auto-Wake Script**: `scripts/keep_alive.js` uses a headless browser (Puppeteer) to check the app status and **automatically clicks the 'Wake up' button** if the app is hibernating.
+- **GitHub Action**: `.github/workflows/keep_alive.yml` runs every 45 minutes to execute the wake script.
+- **Alerting**: Failure to wake the app triggers a standard GitHub Action failure email to the repo owner.
+
 ### Prerequisites
 ```bash
 uv python 3.10
