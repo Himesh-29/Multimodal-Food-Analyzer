@@ -36,7 +36,7 @@ HF_TOKEN=your_huggingface_token
 ```
 
 ## Live Demo
-🚀 [food-vision-rag.streamlit.app](https://recipe-web-app-himesh.streamlit.app/)
+🚀[multimodal-food-analyzer-himesh.streamlit.app](https://multimodal-food-analyzer-himesh.streamlit.app)
 
 ## Folder Structure
 
